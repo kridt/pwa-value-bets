@@ -1,9 +1,14 @@
 // api/notify-all.js
-// Serverless endpoint på Vercel, sender test-notifikation til alle tokens.
-// Kræver Authorization: Bearer <Firebase ID token> fra klienten.
-// Tjekker at kaldende bruger er admin (admins/{uid} findes).
+// Sender test-notifikation til alle tokens. Kun for hardcodede admins.
 
 const admin = require("firebase-admin");
+
+// HARDCOEDEDE ADMIN UID'ER — hold i sync med src/lib/admins.js
+const ADMIN_UIDS = [
+  "Lti6KwrPgRfBbThv11PKLZIk8CV2",
+  // 'ANDET_UID_HER',
+  // 'EN_MERE_HER'
+];
 
 function initAdmin() {
   if (admin.apps.length) return;
@@ -13,18 +18,10 @@ function initAdmin() {
   if (!projectId || !clientEmail || !privateKey) {
     throw new Error("Missing Firebase admin env vars");
   }
-  // Support \n in env
   privateKey = privateKey.replace(/\\n/g, "\n");
   admin.initializeApp({
     credential: admin.credential.cert({ projectId, clientEmail, privateKey }),
   });
-}
-
-async function isAdmin(uid) {
-  const db = admin.firestore();
-  const ref = db.collection("admins").doc(uid);
-  const snap = await ref.get();
-  return snap.exists;
 }
 
 function buildPayload({ title, body, url }) {
@@ -69,14 +66,14 @@ module.exports = async function handler(req, res) {
     const decoded = await admin.auth().verifyIdToken(idToken);
     const uid = decoded.uid;
 
-    // Check admin
-    if (!(await isAdmin(uid)))
+    // Hardcoded admin check
+    if (!ADMIN_UIDS.includes(uid))
       return res.status(403).json({ error: "Not an admin" });
 
     const db = admin.firestore();
     const messaging = admin.messaging();
 
-    // Get all tokens
+    // Hent alle tokens
     const snap = await db.collectionGroup("tokens").get();
     const tokenRefs = snap.docs
       .map((d) => ({ token: d.id, ref: d.ref }))
@@ -101,7 +98,7 @@ module.exports = async function handler(req, res) {
       success += result.successCount;
       fail += result.failureCount;
 
-      // Clean invalid tokens
+      // Slet ugyldige tokens
       await Promise.all(
         result.responses.map(async (r, idx) => {
           if (!r.success) {

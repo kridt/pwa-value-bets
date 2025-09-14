@@ -1,3 +1,4 @@
+// src/pages/Admin.jsx
 import { useEffect, useMemo, useState } from "react";
 import { db } from "../lib/firebase";
 import {
@@ -5,30 +6,20 @@ import {
   collectionGroup,
   doc,
   getDocs,
-  onSnapshot,
-  setDoc,
-  deleteDoc,
   getCountFromServer,
-  query,
 } from "firebase/firestore";
 import { useAuthContext } from "../contexts/AuthContext";
+import { isAdminUid } from "../lib/admins";
+import { Navigate } from "react-router-dom";
 
 export default function Admin() {
   const { user } = useAuthContext();
-  const [admins, setAdmins] = useState([]);
-  const [newAdminUid, setNewAdminUid] = useState("");
+  if (!user || !isAdminUid(user.uid)) return <Navigate to="/" replace />;
+
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [notifBusy, setNotifBusy] = useState(false);
   const [notifResult, setNotifResult] = useState(null);
-
-  // Live-liste over admins
-  useEffect(() => {
-    const unsub = onSnapshot(collection(db, "admins"), (snap) => {
-      setAdmins(snap.docs.map((d) => ({ uid: d.id })));
-    });
-    return () => unsub();
-  }, []);
 
   // Hent kunder + myBets-count pr. kunde
   useEffect(() => {
@@ -41,10 +32,10 @@ export default function Admin() {
         displayName: d.get("displayName") || null,
       }));
 
-      // Fallback: hvis "users" er tom, afled uids fra myBets (collection group)
+      // fallback: afled UIDs fra myBets hvis users er tom
       if (baseUsers.length === 0) {
-        const cg = await getDocs(query(collectionGroup(db, "myBets")));
-        const uidSet = new Set(cg.docs.map((d) => d.ref.path.split("/")[1])); // users/{uid}/myBets/{id}
+        const cg = await getDocs(collectionGroup(db, "myBets"));
+        const uidSet = new Set(cg.docs.map((d) => d.ref.path.split("/")[1]));
         baseUsers = Array.from(uidSet).map((uid) => ({
           uid,
           email: null,
@@ -52,7 +43,6 @@ export default function Admin() {
         }));
       }
 
-      // Count pr. bruger (aggregate)
       const rows = await Promise.all(
         baseUsers.map(async (u) => {
           const cnt = await getCountFromServer(
@@ -62,9 +52,7 @@ export default function Admin() {
         })
       );
 
-      // Sorter efter flest myBets
       rows.sort((a, b) => b.myBets - a.myBets);
-
       setCustomers(rows);
       setLoading(false);
     })();
@@ -75,37 +63,11 @@ export default function Admin() {
     [customers]
   );
 
-  async function addAdmin() {
-    try {
-      const uid = newAdminUid.trim();
-      if (!uid) return;
-      await setDoc(
-        doc(db, "admins", uid),
-        { createdAt: new Date().toISOString() },
-        { merge: true }
-      );
-      setNewAdminUid("");
-      alert("Admin tilføjet.");
-    } catch (e) {
-      alert("Kunne ikke tilføje admin: " + (e.message || e));
-    }
-  }
-
-  async function removeAdmin(uid) {
-    if (!confirm(`Fjern admin ${uid}?`)) return;
-    try {
-      await deleteDoc(doc(db, "admins", uid));
-      alert("Admin fjernet.");
-    } catch (e) {
-      alert("Kunne ikke fjerne admin: " + (e.message || e));
-    }
-  }
-
   async function sendTestNotification() {
     try {
       setNotifBusy(true);
       setNotifResult(null);
-      const idToken = await user.getIdToken(/*forceRefresh*/ true);
+      const idToken = await user.getIdToken(true);
       const res = await fetch("/api/notify-all", {
         method: "POST",
         headers: {
@@ -113,8 +75,8 @@ export default function Admin() {
           Authorization: `Bearer ${idToken}`,
         },
         body: JSON.stringify({
-          title: "VPP — Test fra Admin",
-          body: "Hvis du modtager denne, virker PWA push til alle.",
+          title: "VPP — Admin Test",
+          body: "Hvis du modtager denne, virker broadcast.",
           url: "/",
         }),
       });
@@ -131,44 +93,6 @@ export default function Admin() {
 
   return (
     <div className="space-y-6">
-      {/* Admins */}
-      <section className="glass glow-border p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-lg font-semibold">Admins</h2>
-        </div>
-        <div className="flex gap-2">
-          <input
-            value={newAdminUid}
-            onChange={(e) => setNewAdminUid(e.target.value)}
-            placeholder="UID"
-            className="flex-1 rounded-xl bg-transparent border border-white/15 px-3 py-2 outline-none focus:border-glow"
-          />
-          <button className="btn-primary" onClick={addAdmin}>
-            Tilføj
-          </button>
-        </div>
-        <div className="mt-3 divide-y divide-white/5">
-          {admins.map((a) => (
-            <div
-              key={a.uid}
-              className="py-2 flex items-center justify-between text-sm"
-            >
-              <div>
-                <span className="badge mr-2">Admin</span>
-                {a.uid}
-              </div>
-              <button
-                className="btn-primary px-3"
-                onClick={() => removeAdmin(a.uid)}
-              >
-                Fjern
-              </button>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* Notifikationstest */}
       <section className="glass glow-border p-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">Notification Test</h2>
@@ -188,7 +112,6 @@ export default function Admin() {
         )}
       </section>
 
-      {/* Kunder */}
       <section className="glass glow-border p-4">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-lg font-semibold">Kunder</h2>

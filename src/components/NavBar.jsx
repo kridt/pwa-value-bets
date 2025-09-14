@@ -1,6 +1,7 @@
+// src/components/NavBar.jsx
 import { NavLink } from "react-router-dom";
 import { useAuthContext } from "../contexts/AuthContext";
-import useAdmin from "../hooks/useAdmin";
+import { isAdminUid } from "../lib/admins";
 
 const Tab = ({ to, label }) => (
   <NavLink
@@ -15,7 +16,7 @@ const Tab = ({ to, label }) => (
 
 export default function NavBar() {
   const { user } = useAuthContext();
-  const { isAdmin } = useAdmin(user?.uid || null);
+  const isAdmin = isAdminUid(user?.uid || "");
 
   return (
     <nav className="fixed bottom-4 left-0 right-0">
