@@ -1,14 +1,8 @@
-// api/notify-all.js
-// Sender test-notifikation til alle tokens. Kun for hardcodede admins.
+// api/notify-all.mjs
+import admin from "firebase-admin";
 
-const admin = require("firebase-admin");
-
-// HARDCOEDEDE ADMIN UID'ER — hold i sync med src/lib/admins.js
-const ADMIN_UIDS = [
-  "Lti6KwrPgRfBbThv11PKLZIk8CV2",
-  // 'ANDET_UID_HER',
-  // 'EN_MERE_HER'
-];
+// Hardcodede admins – hold i sync med frontend
+const ADMIN_UIDS = ["Lti6KwrPgRfBbThv11PKLZIk8CV2"];
 
 function initAdmin() {
   if (admin.apps.length) return;
@@ -45,19 +39,18 @@ function buildPayload({ title, body, url }) {
   };
 }
 
-function chunk(arr, size) {
-  const out = [];
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-  return out;
-}
+const chunk = (arr, n) =>
+  Array.from({ length: Math.ceil(arr.length / n) }, (_, i) =>
+    arr.slice(i * n, i * n + n)
+  );
 
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   try {
     if (req.method !== "POST")
       return res.status(405).json({ error: "Method not allowed" });
     initAdmin();
 
-    // Verify ID token
+    // Auth
     const auth = req.headers.authorization || "";
     const m = auth.match(/^Bearer\s+(.+)$/i);
     if (!m)
@@ -65,28 +58,24 @@ module.exports = async function handler(req, res) {
     const idToken = m[1];
     const decoded = await admin.auth().verifyIdToken(idToken);
     const uid = decoded.uid;
-
-    // Hardcoded admin check
     if (!ADMIN_UIDS.includes(uid))
       return res.status(403).json({ error: "Not an admin" });
 
     const db = admin.firestore();
     const messaging = admin.messaging();
 
-    // Hent alle tokens
+    // Tokens
     const snap = await db.collectionGroup("tokens").get();
     const tokenRefs = snap.docs
       .map((d) => ({ token: d.id, ref: d.ref }))
       .filter((t) => t.token);
     const tokens = tokenRefs.map((t) => t.token);
-    const payload = buildPayload(req.body || {});
-
-    if (tokens.length === 0) {
+    if (tokens.length === 0)
       return res
         .status(200)
         .json({ sent: 0, success: 0, fail: 0, note: "no tokens" });
-    }
 
+    const payload = buildPayload(req.body || {});
     let success = 0,
       fail = 0;
     for (const batch of chunk(tokens, 500)) {
@@ -98,7 +87,7 @@ module.exports = async function handler(req, res) {
       success += result.successCount;
       fail += result.failureCount;
 
-      // Slet ugyldige tokens
+      // Clean invalid tokens
       await Promise.all(
         result.responses.map(async (r, idx) => {
           if (!r.success) {
@@ -123,4 +112,4 @@ module.exports = async function handler(req, res) {
     console.error("notify-all error", e);
     return res.status(500).json({ error: e.message || String(e) });
   }
-};
+}
