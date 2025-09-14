@@ -1,0 +1,98 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply text-snow;
+    background: #071b26;
+  }
+}
+
+/* “Wow” baggrund */
+.bg-constellation {
+  background: radial-gradient(
+      1200px 600px at 80% -10%,
+      rgba(71, 231, 215, 0.1),
+      transparent 60%
+    ),
+    radial-gradient(
+      800px 400px at 10% 10%,
+      rgba(71, 231, 215, 0.06),
+      transparent 60%
+    ),
+    radial-gradient(
+      1000px 800px at 50% 120%,
+      rgba(3, 169, 244, 0.08),
+      transparent 60%
+    ),
+    linear-gradient(180deg, #071b26 0%, #061520 60%, #081b29 100%);
+}
+
+/* Scrollbar-hider til chips-row */
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
+
+/* Undgå slash-opacity i @apply → brug rene farver her */
+@layer components {
+  .glass {
+    @apply backdrop-blur-xs rounded-2xl shadow-soft border;
+    background-color: rgba(11, 31, 44, 0.6); /* bg-card/60 */
+    border-color: rgba(255, 255, 255, 0.05); /* border-white/5 */
+  }
+
+  .glow-border {
+    position: relative;
+  }
+  .glow-border::before {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    border-radius: 1rem; /* match rounded-2xl */
+    padding: 1px;
+    background: linear-gradient(
+      120deg,
+      rgba(71, 231, 215, 0.65),
+      rgba(71, 231, 215, 0) 30%,
+      rgba(71, 231, 215, 0.35) 60%,
+      rgba(71, 231, 215, 0) 90%
+    );
+    -webkit-mask: linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+
+  .btn-primary {
+    @apply relative inline-flex items-center justify-center px-4 py-2 rounded-xl text-snow border shadow-neon;
+    background-color: rgba(71, 231, 215, 0.2); /* bg-glow/20 */
+    border-color: rgba(71, 231, 215, 0.4); /* border-glow/40 */
+  }
+  .btn-primary:hover {
+    background-color: rgba(71, 231, 215, 0.25); /* bg-glow/25 */
+    border-color: rgba(71, 231, 215, 1); /* border-glow */
+  }
+
+  .badge {
+    @apply text-xs px-2 py-1 rounded-lg border;
+    background-color: rgba(71, 231, 215, 0.15); /* bg-glow/15 */
+    border-color: rgba(71, 231, 215, 0.4); /* border-glow/40 */
+  }
+}
