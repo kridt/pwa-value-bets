@@ -1,14 +1,10 @@
 {
-  "$schema": "https://openapi.vercel.sh/vercel.json",
   "version": 2,
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "functions": {
-    "api/**/*.{js,mjs}": {
-      "runtime": "nodejs18.x",
-      "memory": 256,
-      "maxDuration": 10
-    }
+    "api/**/*.mjs": { "runtime": "nodejs20.x" },
+    "api/**/*.js": { "runtime": "nodejs20.x" }
   },
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1" },
