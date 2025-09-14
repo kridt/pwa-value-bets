@@ -24,6 +24,8 @@ export default function NavBar() {
           <Tab to="/" label="Feed" />
           <div className="w-px h-5 bg-white/10" />
           <Tab to="/my-bets" label="MyBets" />
+          <div className="w-px h-5 bg-white/10" />
+          <Tab to="/my-bets-history" label="History" />
           {isAdmin && (
             <>
               <div className="w-px h-5 bg-white/10" />

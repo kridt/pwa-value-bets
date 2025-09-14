@@ -10,16 +10,14 @@ import Settings from "./pages/Settings";
 import Login from "./pages/Login";
 import Admin from "./pages/Admin";
 import MyBets from "./pages/MyBets";
+import MyBetsHistory from "./pages/MyBetsHistory";
 
 import RequireAdmin from "./components/RequireAdmin";
 import RequireAuth from "./components/RequireAuth";
 import AuthProvider from "./contexts/AuthContext";
 
 const router = createBrowserRouter([
-  // login er eneste offentlige route
   { path: "/login", element: <Login /> },
-
-  // resten kræver login
   {
     element: (
       <RequireAuth>
@@ -30,6 +28,7 @@ const router = createBrowserRouter([
       { path: "/", element: <Feed /> },
       { path: "/bet/:id", element: <BetDetail /> },
       { path: "/my-bets", element: <MyBets /> },
+      { path: "/my-bets-history", element: <MyBetsHistory /> },
       { path: "/settings", element: <Settings /> },
       {
         path: "/admin",
@@ -45,7 +44,6 @@ const router = createBrowserRouter([
 
 createRoot(document.getElementById("root")).render(
   <React.StrictMode>
-    {/* <<< Her ligger AuthProvider, så RequireAuth har context >>> */}
     <AuthProvider>
       <RouterProvider router={router} />
     </AuthProvider>

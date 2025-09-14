@@ -1,7 +1,13 @@
-// Parser for "hh:mm dd.mm.yyyy" -> Date (lokal tid)
+// Parser "hh:mm dd.mm.yyyy" ELLER "hh.mm dd.mm.yyyy" -> Date (lokal tid)
 export function parseGameTime(text) {
   if (!text || typeof text !== "string") return null;
-  const m = text.match(/^(\d{1,2}):(\d{2})\s+(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+
+  // Normaliser "21.00 26.08.2025" => "21:00 26.08.2025"
+  const norm = text
+    .trim()
+    .replace(/^(\d{1,2})\.(\d{2})/, (_, h, m) => `${h}:${m}`);
+
+  const m = norm.match(/^(\d{1,2}):(\d{2})\s+(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
   if (!m) return null;
   const [, hh, mm, dd, mo, yyyy] = m;
   return new Date(
