@@ -1,4 +1,3 @@
-// src/pages/Settings.jsx
 import { useEffect, useState } from "react";
 import {
   getTokenPermission,
@@ -13,12 +12,12 @@ export default function Settings() {
   const [token, setToken] = useState(null);
   const [busy, setBusy] = useState(false);
 
-  // Hent status/token hvis allerede givet tilladelse
   useEffect(() => {
     (async () => {
       const { permission, token } = await getTokenPermission();
       setPerm(permission);
       setToken(token);
+      console.log("[FCM] permission=", permission, " token=", token);
     })();
   }, []);
 
@@ -40,6 +39,12 @@ export default function Settings() {
               setPerm(permission);
               setToken(token);
               setBusy(false);
+              console.log(
+                "[FCM] after enable → permission=",
+                permission,
+                " token=",
+                token
+              );
               if (permission !== "granted")
                 alert("Tilladelse blev ikke givet.");
             }}
@@ -52,10 +57,10 @@ export default function Settings() {
             onClick={async () => {
               await localTestNotification({
                 title: "VPP — Test",
-                body: "Hvis du ser denne, kan din enhed vise notifikationer.",
+                body: "Hvis du ser denne, fungerer SW/permissions.",
                 url: "/",
               });
-              alert("Test notification sendt (via service worker).");
+              alert("Lokal test sendt (via service worker).");
             }}
           >
             Send Test Notification
@@ -77,10 +82,33 @@ export default function Settings() {
             className="btn-primary"
             onClick={async () => {
               if (!token) return alert("Ingen token endnu.");
+              const res = await fetch("/api/ping", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  token,
+                  title: "VPP — Ping",
+                  body: "Direkte ping til din enhed",
+                  url: "/",
+                }),
+              });
+              const json = await res.json();
+              if (!res.ok)
+                return alert("Ping fejl: " + (json.error || res.status));
+              alert("Ping sendt! (messageId: " + json.messageId + ")");
+            }}
+          >
+            Ping min enhed
+          </button>
+
+          <button
+            className="btn-primary"
+            onClick={async () => {
+              if (!token) return alert("Ingen token endnu.");
               const ok = await subscribeToTopic("bets", token);
               alert(
                 ok
-                  ? 'Subscribed til "bets" topic (eller no-op hvis endpoint mangler).'
+                  ? 'Subscribed til "bets" (eller no-op hvis endpoint mangler).'
                   : "Subscription fejlede."
               );
             }}

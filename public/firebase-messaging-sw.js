@@ -6,7 +6,6 @@ importScripts(
   "https://www.gstatic.com/firebasejs/10.12.4/firebase-messaging-compat.js"
 );
 
-// Firebase web-config (offentlig, må ligge på klienten)
 firebase.initializeApp({
   apiKey: "AIzaSyD_iLOnIAEQCpk5f2Dj6bBJFZtThkKEYZA",
   authDomain: "ev-betting-cc2d2.firebaseapp.com",
@@ -18,7 +17,6 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging();
 
-// 1) FCM "background" data-beskeder
 messaging.onBackgroundMessage((payload) => {
   const data = payload?.data || {};
   const title = data.title || "Value Profits Protocol";
@@ -28,11 +26,10 @@ messaging.onBackgroundMessage((payload) => {
   self.registration.showNotification(title, { body, icon, data: { url } });
 });
 
-// 2) Rå Web Push fallback (nogle browsere/iOS-veje leverer her)
 self.addEventListener("push", (event) => {
   try {
     const data = event.data?.json?.() || {};
-    const n = data?.notification || data; // HTTP v1 kan lægge den under notification
+    const n = data?.notification || data;
     const title = n.title || data.title || "Value Profits Protocol";
     const body = n.body || data.body || "New EV bet";
     const icon = n.icon || data.icon || "/icons/icon-192.png";
@@ -40,8 +37,7 @@ self.addEventListener("push", (event) => {
     event.waitUntil(
       self.registration.showNotification(title, { body, icon, data: { url } })
     );
-  } catch (e) {
-    // Hvis ikke JSON, prøv som tekst
+  } catch {
     const txt = event.data?.text?.() || "New EV bet";
     event.waitUntil(
       self.registration.showNotification("Value Profits Protocol", {
@@ -53,7 +49,6 @@ self.addEventListener("push", (event) => {
   }
 });
 
-// Lokal test fra appen
 self.addEventListener("message", (event) => {
   const data = event.data || {};
   if (data.type === "LOCAL_TEST") {
