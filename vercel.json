@@ -1,22 +1,46 @@
 {
-  "cleanUrls": true,
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "version": 2,
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "functions": {
+    "api/*.js": {
+      "runtime": "nodejs18.x",
+      "memory": 256,
+      "maxDuration": 10
+    }
+  },
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/$1" },
+    {
+      "source": "/(firebase-messaging-sw\\.js|manifest\\.webmanifest)",
+      "destination": "/$1"
+    },
+    { "source": "/assets/(.*)", "destination": "/assets/$1" },
+    { "source": "/icons/(.*)", "destination": "/icons/$1" },
+    {
+      "source": "/((?!api|assets|icons|firebase-messaging-sw\\.js|manifest\\.webmanifest).*)",
+      "destination": "/index.html"
+    }
+  ],
   "headers": [
     {
-      "source": "/manifest.webmanifest",
+      "source": "/firebase-messaging-sw.js",
       "headers": [
-        { "key": "Content-Type", "value": "application/manifest+json" },
+        { "key": "Cache-Control", "value": "no-store" },
         { "key": "Service-Worker-Allowed", "value": "/" }
       ]
     },
     {
-      "source": "/firebase-messaging-sw.js",
+      "source": "/manifest.webmanifest",
       "headers": [
-        { "key": "Service-Worker-Allowed", "value": "/" },
         {
-          "key": "Cache-Control",
-          "value": "public, max-age=0, must-revalidate"
+          "key": "Content-Type",
+          "value": "application/manifest+json; charset=utf-8"
         }
       ]
     }
-  ]
+  ],
+  "cleanUrls": true,
+  "trailingSlash": false
 }
