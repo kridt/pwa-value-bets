@@ -75,7 +75,7 @@ export default function Settings() {
           >
             Copy FCM Token
           </button>
-          // ... inde i Settings.jsx-komponenten:
+
           <button
             className="btn-primary"
             onClick={async () => {

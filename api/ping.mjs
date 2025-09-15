@@ -1,8 +1,16 @@
 // api/ping.mjs
-// Pinger ét FCM-token. Robust Firebase Admin init + sikker body-parse + klare fejl.
+// Sender en test-push til ét FCM token.
+// Viser detaljeret debug: hvilken credential sti, hvilket projectId, og FCM-fejlkode.
 
 import admin from "firebase-admin";
 
+function j(o) {
+  try {
+    return JSON.stringify(o);
+  } catch {
+    return String(o);
+  }
+}
 function log(...a) {
   console.log("[PING]", ...a);
 }
@@ -10,87 +18,83 @@ function err(...a) {
   console.error("[PING]", ...a);
 }
 
-// Robust init:
-// 1) FIREBASE_SERVICE_ACCOUNT_BASE64  (hele service-account JSON som base64)  ← anbefalet
-// 2) FIREBASE_PRIVATE_KEY_BASE64 + FIREBASE_CLIENT_EMAIL + FIREBASE_PROJECT_ID
-// 3) FIREBASE_PRIVATE_KEY (+ evt. \n) + FIREBASE_CLIENT_EMAIL + FIREBASE_PROJECT_ID
-function initAdmin() {
-  if (admin.apps.length) return;
-
+// Læs service account på en robust måde.
+// PRIORITET: FIREBASE_SERVICE_ACCOUNT_BASE64  →  pkBase64  →  klassisk PEM + proj/email
+function loadServiceAccount() {
   const svcB64 = process.env.FIREBASE_SERVICE_ACCOUNT_BASE64;
-  const pkB64 = process.env.FIREBASE_PRIVATE_KEY_BASE64;
-  let pkPem = process.env.FIREBASE_PRIVATE_KEY;
-  const projectId = process.env.FIREBASE_PROJECT_ID;
-  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-
   if (svcB64) {
     const jsonStr = Buffer.from(svcB64, "base64").toString("utf8");
-    let creds;
-    try {
-      creds = JSON.parse(jsonStr);
-    } catch {
-      throw new Error("FIREBASE_SERVICE_ACCOUNT_BASE64 is not valid JSON");
-    }
-    if (!creds.private_key?.includes("BEGIN PRIVATE KEY")) {
-      throw new Error("Decoded service account JSON has no private_key PEM");
-    }
-    admin.initializeApp({ credential: admin.credential.cert(creds) });
-    log("Admin initialized via FIREBASE_SERVICE_ACCOUNT_BASE64");
-    return;
+    const creds = JSON.parse(jsonStr);
+    return { from: "serviceAccountBase64", creds };
   }
 
+  const pkB64 = process.env.FIREBASE_PRIVATE_KEY_BASE64;
   if (pkB64) {
-    if (!projectId || !clientEmail) {
-      throw new Error(
-        "Need FIREBASE_PROJECT_ID and FIREBASE_CLIENT_EMAIL with FIREBASE_PRIVATE_KEY_BASE64"
-      );
-    }
-    const pem = Buffer.from(pkB64, "base64").toString("utf8").trim();
-    if (!pem.startsWith("-----BEGIN PRIVATE KEY-----"))
-      throw new Error("Decoded FIREBASE_PRIVATE_KEY_BASE64 lacks PEM header");
-    admin.initializeApp({
-      credential: admin.credential.cert({
-        projectId,
-        clientEmail,
+    const pem = Buffer.from(pkB64, "base64")
+      .toString("utf8")
+      .replace(/\\n/g, "\n")
+      .trim();
+    return {
+      from: "pkBase64",
+      creds: {
+        projectId: process.env.FIREBASE_PROJECT_ID,
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
         privateKey: pem,
-      }),
-    });
-    log("Admin initialized via FIREBASE_PRIVATE_KEY_BASE64");
-    return;
+      },
+    };
   }
 
-  // Classic PEM i env (multilinje eller \n)
-  const missing = [];
-  if (!projectId) missing.push("FIREBASE_PROJECT_ID");
-  if (!clientEmail) missing.push("FIREBASE_CLIENT_EMAIL");
-  if (!pkPem) missing.push("FIREBASE_PRIVATE_KEY");
-  if (missing.length)
-    throw new Error("Missing Firebase admin env vars: " + missing.join(", "));
+  const pem = (process.env.FIREBASE_PRIVATE_KEY || "")
+    .replace(/\\n/g, "\n")
+    .trim();
+  return {
+    from: "pkPem",
+    creds: {
+      projectId: process.env.FIREBASE_PROJECT_ID,
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      privateKey: pem,
+    },
+  };
+}
 
-  if (pkPem.includes("\\n")) pkPem = pkPem.replace(/\\n/g, "\n");
-  pkPem = pkPem.trim();
+let INIT = null;
+function initAdmin() {
+  if (admin.apps.length) return INIT;
+  const { from, creds } = loadServiceAccount();
+
+  const missing = [];
+  if (!creds?.privateKey) missing.push("privateKey");
+  if (!creds?.clientEmail) missing.push("clientEmail");
+  if (!creds?.projectId) missing.push("projectId");
+  if (missing.length) {
+    const m = `Missing Firebase admin values (${from}): ` + missing.join(", ");
+    throw new Error(m);
+  }
+
   if (
-    !pkPem.startsWith("-----BEGIN PRIVATE KEY-----") ||
-    !pkPem.includes("-----END PRIVATE KEY-----")
+    !/^-----BEGIN PRIVATE KEY-----/.test(creds.privateKey) ||
+    !creds.privateKey.includes("-----END PRIVATE KEY-----")
   ) {
-    throw new Error("FIREBASE_PRIVATE_KEY is not a valid PEM block");
+    throw new Error("Private key is not a valid PEM block");
   }
 
   admin.initializeApp({
     credential: admin.credential.cert({
-      projectId,
-      clientEmail,
-      privateKey: pkPem,
+      projectId: creds.projectId,
+      clientEmail: creds.clientEmail,
+      privateKey: creds.privateKey,
     }),
   });
-  log("Admin initialized via FIREBASE_PRIVATE_KEY (PEM)");
+
+  INIT = { from, projectId: creds.projectId };
+  log("Admin initialized →", INIT);
+  return INIT;
 }
 
-// Sikker body-parse (uden req.json)
 async function readJson(req) {
   if (req.body && typeof req.body === "object") return req.body;
   const bufs = [];
-  for await (const chunk of req) bufs.push(chunk);
+  for await (const c of req) bufs.push(c);
   const raw = Buffer.concat(bufs).toString("utf8");
   try {
     return raw ? JSON.parse(raw) : {};
@@ -102,30 +106,25 @@ async function readJson(req) {
 export default async function handler(req, res) {
   const started = Date.now();
   try {
-    if (req.method !== "POST") {
+    if (req.method !== "POST")
       return res.status(405).json({ ok: false, error: "Method not allowed" });
-    }
+    const initInfo = initAdmin();
 
-    initAdmin();
+    const body = await readJson(req);
+    const token = body?.token;
+    const nTitle = body?.title || "VPP — Ping";
+    const nBody = body?.body || "Direkte ping til din enhed";
+    const nUrl = body?.url || "/";
 
-    const { token, title, body, url } = await readJson(req);
     if (!token || typeof token !== "string") {
-      return res.status(400).json({ ok: false, error: "Missing token" });
+      return res
+        .status(400)
+        .json({ ok: false, error: "Missing token", debug: { initInfo } });
     }
 
-    const nTitle = title || "VPP — Ping";
-    const nBody = body || "Direkte ping til din enhed";
-    const nUrl = url || "/";
-
-    const payload = {
+    // Minimal payload for webpush
+    const message = {
       token,
-      data: {
-        title: nTitle,
-        body: nBody,
-        icon: "/icons/icon-192.png",
-        url: nUrl,
-        kind: "ping",
-      },
       webpush: {
         notification: {
           title: nTitle,
@@ -135,25 +134,46 @@ export default async function handler(req, res) {
         fcmOptions: { link: nUrl },
         headers: { Urgency: "high" },
       },
+      data: {
+        title: nTitle,
+        body: nBody,
+        url: nUrl,
+        icon: "/icons/icon-192.png",
+        kind: "ping",
+      },
     };
 
-    const messageId = await admin.messaging().send(payload);
+    log(
+      "Sending to token=",
+      token.slice(0, 10) + "…",
+      "projectId=",
+      initInfo.projectId
+    );
+    const messageId = await admin.messaging().send(message);
 
     return res.status(200).json({
       ok: true,
       messageId,
       debug: {
+        initInfo,
         durationMs: Date.now() - started,
         tokenPreview: token.slice(0, 8) + "…" + token.slice(-4),
-        used: {
-          svcJsonB64: !!process.env.FIREBASE_SERVICE_ACCOUNT_BASE64,
-          pkB64: !!process.env.FIREBASE_PRIVATE_KEY_BASE64,
-          pkPem: !!process.env.FIREBASE_PRIVATE_KEY,
-        },
       },
     });
   } catch (e) {
-    err("Ping failed:", e);
-    return res.status(500).json({ ok: false, error: e.message || String(e) });
+    // Træk mest muligt ud af Firebase-fejl
+    const code = e?.errorInfo?.code || e?.code || null;
+    const details = e?.errorInfo || null;
+    const msg = e?.message || String(e);
+    const initInfo = INIT;
+
+    err("PING FAILED", { code, msg, details, initInfo });
+    return res.status(500).json({
+      ok: false,
+      error: msg,
+      code,
+      details,
+      debug: { initInfo },
+    });
   }
 }
