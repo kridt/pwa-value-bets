@@ -51,7 +51,6 @@ export default function Settings() {
           >
             Enable Push
           </button>
-
           <button
             className="btn-primary"
             onClick={async () => {
@@ -65,7 +64,6 @@ export default function Settings() {
           >
             Send Test Notification
           </button>
-
           <button
             className="btn-primary"
             onClick={async () => {
@@ -77,30 +75,48 @@ export default function Settings() {
           >
             Copy FCM Token
           </button>
-
+          // ... inde i Settings.jsx-komponenten:
           <button
             className="btn-primary"
             onClick={async () => {
-              if (!token) return alert("Ingen token endnu.");
-              const res = await fetch("/api/ping", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  token,
-                  title: "VPP — Ping",
-                  body: "Direkte ping til din enhed",
-                  url: "/",
-                }),
-              });
-              const json = await res.json();
-              if (!res.ok)
-                return alert("Ping fejl: " + (json.error || res.status));
-              alert("Ping sendt! (messageId: " + json.messageId + ")");
+              if (!token)
+                return alert("Ingen token endnu – tryk først på Enable Push.");
+              try {
+                const res = await fetch("/api/ping", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    token,
+                    title: "VPP — Ping",
+                    body: "Direkte ping til din enhed",
+                    url: "/",
+                  }),
+                });
+                let json = {};
+                try {
+                  json = await res.json();
+                } catch {
+                  json = {};
+                } // ← robust parse
+                console.log("[PING][client] status", res.status, json);
+
+                if (!res.ok || json.ok === false) {
+                  return alert(
+                    "Ping fejl: " + (json.error || `HTTP ${res.status}`)
+                  );
+                }
+
+                alert(
+                  "Ping sendt! (messageId: " + (json.messageId || "—") + ")"
+                );
+              } catch (e) {
+                console.error("[PING][client] exception", e);
+                alert("Ping fejl: " + (e.message || String(e)));
+              }
             }}
           >
             Ping min enhed
           </button>
-
           <button
             className="btn-primary"
             onClick={async () => {
