@@ -1,6 +1,6 @@
 // api/ping.mjs
-// Sender en test-push til ét FCM token.
-// Viser detaljeret debug: hvilken credential sti, hvilket projectId, og FCM-fejlkode.
+// Ping ét FCM-token. Robust init af Firebase Admin + tydelig debug.
+// Understøtter FIREBASE_SERVICE_ACCOUNT_BASE64 (hele JSON), PRIVATE_KEY_BASE64 eller klassisk PEM.
 
 import admin from "firebase-admin";
 
@@ -18,62 +18,71 @@ function err(...a) {
   console.error("[PING]", ...a);
 }
 
-// Læs service account på en robust måde.
-// PRIORITET: FIREBASE_SERVICE_ACCOUNT_BASE64  →  pkBase64  →  klassisk PEM + proj/email
+function normalize(credsRaw) {
+  if (!credsRaw || typeof credsRaw !== "object") return null;
+  const projectId = credsRaw.projectId || credsRaw.project_id;
+  const clientEmail = credsRaw.clientEmail || credsRaw.client_email;
+  let privateKey = credsRaw.privateKey || credsRaw.private_key;
+  if (typeof privateKey === "string" && privateKey.includes("\\n"))
+    privateKey = privateKey.replace(/\\n/g, "\n");
+  return { projectId, clientEmail, privateKey };
+}
+
 function loadServiceAccount() {
   const svcB64 = process.env.FIREBASE_SERVICE_ACCOUNT_BASE64;
   if (svcB64) {
     const jsonStr = Buffer.from(svcB64, "base64").toString("utf8");
-    const creds = JSON.parse(jsonStr);
+    let raw;
+    try {
+      raw = JSON.parse(jsonStr);
+    } catch {
+      throw new Error("FIREBASE_SERVICE_ACCOUNT_BASE64 is not valid JSON");
+    }
+    const creds = normalize(raw);
     return { from: "serviceAccountBase64", creds };
   }
 
   const pkB64 = process.env.FIREBASE_PRIVATE_KEY_BASE64;
   if (pkB64) {
-    const pem = Buffer.from(pkB64, "base64")
-      .toString("utf8")
-      .replace(/\\n/g, "\n")
-      .trim();
-    return {
-      from: "pkBase64",
-      creds: {
-        projectId: process.env.FIREBASE_PROJECT_ID,
-        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-        privateKey: pem,
-      },
-    };
-  }
-
-  const pem = (process.env.FIREBASE_PRIVATE_KEY || "")
-    .replace(/\\n/g, "\n")
-    .trim();
-  return {
-    from: "pkPem",
-    creds: {
+    const pem = Buffer.from(pkB64, "base64").toString("utf8");
+    const creds = normalize({
       projectId: process.env.FIREBASE_PROJECT_ID,
       clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
       privateKey: pem,
-    },
-  };
+    });
+    return { from: "pkBase64", creds };
+  }
+
+  const pem = process.env.FIREBASE_PRIVATE_KEY;
+  const creds = normalize({
+    projectId: process.env.FIREBASE_PROJECT_ID,
+    clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+    privateKey: pem,
+  });
+  return { from: "pkPem", creds };
 }
 
 let INIT = null;
 function initAdmin() {
   if (admin.apps.length) return INIT;
+
   const { from, creds } = loadServiceAccount();
-
   const missing = [];
-  if (!creds?.privateKey) missing.push("privateKey");
-  if (!creds?.clientEmail) missing.push("clientEmail");
   if (!creds?.projectId) missing.push("projectId");
-  if (missing.length) {
-    const m = `Missing Firebase admin values (${from}): ` + missing.join(", ");
-    throw new Error(m);
-  }
+  if (!creds?.clientEmail) missing.push("clientEmail");
+  if (!creds?.privateKey) missing.push("privateKey");
+  if (missing.length)
+    throw new Error(
+      `Missing Firebase admin values (${from}): ${missing.join(", ")}`
+    );
 
+  const pk = String(creds.privateKey)
+    .replace(/^\uFEFF/, "")
+    .replace(/\\n/g, "\n")
+    .trim();
   if (
-    !/^-----BEGIN PRIVATE KEY-----/.test(creds.privateKey) ||
-    !creds.privateKey.includes("-----END PRIVATE KEY-----")
+    !/^-----BEGIN PRIVATE KEY-----/.test(pk) ||
+    !pk.includes("-----END PRIVATE KEY-----")
   ) {
     throw new Error("Private key is not a valid PEM block");
   }
@@ -82,7 +91,7 @@ function initAdmin() {
     credential: admin.credential.cert({
       projectId: creds.projectId,
       clientEmail: creds.clientEmail,
-      privateKey: creds.privateKey,
+      privateKey: pk,
     }),
   });
 
@@ -122,7 +131,6 @@ export default async function handler(req, res) {
         .json({ ok: false, error: "Missing token", debug: { initInfo } });
     }
 
-    // Minimal payload for webpush
     const message = {
       token,
       webpush: {
@@ -161,19 +169,13 @@ export default async function handler(req, res) {
       },
     });
   } catch (e) {
-    // Træk mest muligt ud af Firebase-fejl
     const code = e?.errorInfo?.code || e?.code || null;
     const details = e?.errorInfo || null;
     const msg = e?.message || String(e);
     const initInfo = INIT;
-
     err("PING FAILED", { code, msg, details, initInfo });
-    return res.status(500).json({
-      ok: false,
-      error: msg,
-      code,
-      details,
-      debug: { initInfo },
-    });
+    return res
+      .status(500)
+      .json({ ok: false, error: msg, code, details, debug: { initInfo } });
   }
 }
